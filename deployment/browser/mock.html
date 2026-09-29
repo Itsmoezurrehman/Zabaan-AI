@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zabaan mock call</title>
+<style>
+  :root { --bg: #f6f5f2; --card: #fff; --text: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+          --you: #e8eef9; --agent: #fff; --accent: #1f5fbf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161614; --card: #201f1d; --text: #ecebe6; --muted: #a09e97; --line: #34332f;
+            --you: #1d2a40; --agent: #201f1d; --accent: #7aa7f0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+  h1 { font-size: 22px; margin: 0; }
+  a { color: var(--accent); }
+  .note { color: var(--muted); font-size: 14px; margin: 6px 0 16px; }
+  #chat { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px; min-height: 240px; }
+  .line { margin: 8px 0; padding: 8px 12px; border-radius: 8px; max-width: 85%; overflow-wrap: anywhere; }
+  .line.you { background: var(--you); margin-left: auto; }
+  .line.agent { background: var(--agent); border: 1px solid var(--line); }
+  .who { display: block; font-size: 12px; color: var(--muted); }
+  form { display: flex; gap: 8px; margin-top: 12px; }
+  input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 8px;
+          border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  button { font: inherit; padding: 10px 16px; border-radius: 8px; border: 0;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button.plain { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Zabaan mock call</h1>
+    <a href="/tickets" target="_blank">Open the tickets dashboard</a>
+  </header>
+  <p class="note">
+    Mock mode: no microphone and no API key. A simple scripted agent drives the same
+    ticket rules as a real call. Try "mera card block ho gaya", then "ji".
+  </p>
+  <div id="chat" aria-live="polite"></div>
+  <form id="form">
+    <input id="text" autocomplete="off" placeholder="Type what the caller says…" autofocus>
+    <button type="submit">Send</button>
+    <button type="button" class="plain" id="restart">Start over</button>
+  </form>
+</main>
+<script>
+// Inserted as text, never HTML.
+const GREETING = 'Assalamu Alaikum, this is Roshan Trust Bank. How may I assist you today?'
+let session = ''
+
+function newSession() {
+  session = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)
+  document.getElementById('chat').replaceChildren()
+  addLine('agent', GREETING)
+}
+
+function addLine(who, text) {
+  const line = document.createElement('div')
+  line.className = 'line ' + who
+  const label = document.createElement('span')
+  label.className = 'who'
+  label.textContent = who === 'agent' ? 'Zabaan' : 'You'
+  line.append(label, document.createTextNode(text))
+  const chat = document.getElementById('chat')
+  chat.append(line)
+  line.scrollIntoView({ block: 'nearest' })
+}
+
+document.getElementById('form').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const input = document.getElementById('text')
+  const text = input.value.trim()
+  if (!text) return
+  input.value = ''
+  addLine('you', text)
+  try {
+    const res = await fetch('/api/mock/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, text }),
+    })
+    const data = await res.json()
+    addLine('agent', data.reply || data.error || 'Something went wrong.')
+  } catch {
+    addLine('agent', 'The server did not answer.')
+  }
+  input.focus()
+})
+document.getElementById('restart').addEventListener('click', newSession)
+newSession()
+</script>
+</body>
+</html>

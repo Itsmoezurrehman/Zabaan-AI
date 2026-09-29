@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zabaan tickets</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #fff; --text: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+    --filed: #1f7a4d; --filed-bg: #e7f4ec; --draft: #a15c00; --draft-bg: #fdf1dc;
+    --reject: #b3261e; --reject-bg: #fbe9e7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --card: #201f1d; --text: #ecebe6; --muted: #a09e97; --line: #34332f;
+      --filed: #5cc28f; --filed-bg: #16301f; --draft: #e6a44a; --draft-bg: #33260f;
+      --reject: #f08a80; --reject-bg: #3a1a17;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  .counts { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+  .pill.filed { background: var(--filed-bg); color: var(--filed); }
+  .pill.draft { background: var(--draft-bg); color: var(--draft); }
+  .updated { color: var(--muted); font-size: 13px; margin-left: auto; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+  @media (max-width: 800px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 2px solid var(--line); border-radius: 10px;
+          padding: 14px 16px; margin-bottom: 12px; }
+  .card.confirmed { border-color: var(--filed); }
+  .card.draft { border-style: dashed; border-color: var(--draft); }
+  .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .category { font-size: 17px; font-weight: 700; text-transform: capitalize; }
+  .badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .confirmed .badge { background: var(--filed-bg); color: var(--filed); }
+  .draft .badge { background: var(--draft-bg); color: var(--draft); }
+  .summary { margin: 4px 0 10px; }
+  dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 16px; margin: 0; }
+  dt { font-size: 12px; color: var(--muted); }
+  dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .heard { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .heard .label { font-size: 12px; color: var(--muted); }
+  .heard .text { white-space: pre-line; overflow-wrap: anywhere; }
+  aside h2 { font-size: 15px; margin: 0 0 10px; }
+  .reject { background: var(--card); border-left: 4px solid var(--reject); border-radius: 6px;
+            padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
+  .reject .why { color: var(--reject); font-weight: 700; }
+  .reject .meta { color: var(--muted); font-size: 12px; }
+  .reject .said { overflow-wrap: anywhere; }
+  .empty { color: var(--muted); }
+  #unlock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px;
+            background: var(--card); border: 2px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  #unlock[hidden] { display: none; }
+  #unlock label { flex: 1 1 100%; font-weight: 600; }
+  #unlock input, #unlock button { font: inherit; padding: 6px 10px; border-radius: 6px;
+                                  border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  #unlock input { flex: 0 1 200px; min-width: 0; }
+  #unlock button { cursor: pointer; font-weight: 600; }
+  #unlock-msg { color: var(--reject); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Roshan Trust Bank complaints</h1>
+    <div class="counts">
+      <span class="pill filed" id="count-filed">0 confirmed</span>
+      <span class="pill draft" id="count-draft">0 drafts</span>
+    </div>
+    <span class="updated" id="updated">Loading…</span>
+  </header>
+  <form id="unlock" hidden>
+    <label for="passcode">This dashboard needs the demo passcode.</label>
+    <input id="passcode" type="password" placeholder="Demo passcode" autocomplete="off">
+    <button type="submit">Show tickets</button>
+    <span id="unlock-msg"></span>
+  </form>
+  <div class="layout">
+    <section id="tickets"><p class="empty">No tickets yet.</p></section>
+    <aside>
+      <h2>Rejected confirmations</h2>
+      <div id="rejections"><p class="empty">None yet.</p></div>
+    </aside>
+  </div>
+</main>
+<script>
+// Everything is inserted as text, never HTML: heard_as is whatever the caller said.
+const REASONS = {
+  no_affirmation: 'No affirmation',
+  negation: 'Negation found',
+  amount_mismatch: 'Amount mismatch',
+  already_confirmed: 'Already confirmed',
+  no_such_ticket: 'No such ticket',
+}
+const DETAIL_LABELS = {
+  full_name: 'Name',
+  email: 'Email',
+  loss_type: 'Lost or stolen',
+  issue_type: 'Issue',
+  device: 'Device or browser',
+  mailing_address: 'Mailing address',
+  card_type: 'Card type',
+  reason: 'Reason',
+  account_last6: 'Account (last 6)',
+  cheque_leaves: 'Leaves',
+}
+let lastSeen = ''
+
+function el(tag, className, text) {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+function rupees(amount) {
+  return amount === null || amount === undefined ? 'no amount' : 'Rs ' + amount.toLocaleString('en-IN')
+}
+
+function when(iso) {
+  return iso ? new Date(iso).toLocaleString() : ''
+}
+
+function ticketCard(t) {
+  const card = el('article', 'card ' + t.status)
+  const top = el('div', 'top')
+  top.append(el('span', 'category', t.category.replace(/_/g, ' ')),
+             el('span', 'badge', t.status === 'confirmed' ? 'FILED' : 'DRAFT, not filed'))
+  card.append(top, el('p', 'summary', t.summary))
+  const details = el('dl')
+  for (const [label, value] of [
+    ['Amount', rupees(t.amount)],
+    ['Urgency', t.urgency],
+    ['When', t.time_reference || 'not given'],
+    ['Reference', t.ticket_id],
+    ['Created', when(t.created_at)],
+    // Email and address arrive already masked from /api/tickets.
+    ...Object.entries(t.details || {}).map(([k, v]) => [DETAIL_LABELS[k] || k, String(v).replace(/_/g, ' ')]),
+  ]) {
+    const item = el('div')
+    item.append(el('dt', '', label), el('dd', '', value))
+    details.append(item)
+  }
+  card.append(details)
+  const heard = el('div', 'heard')
+  heard.append(el('div', 'label', 'Recognizer text'), el('div', 'text', t.heard_as || '(none)'))
+  card.append(heard)
+  return card
+}
+
+function rejectionRow(r) {
+  const row = el('div', 'reject')
+  row.append(el('div', 'why', REASONS[r.reason] || r.reason),
+             el('div', 'said', r.reply ? '“' + r.reply + '”' : '(no reply text)'),
+             el('div', 'meta', `${r.ticket_id || 'unknown ticket'} · ${when(r.at)}`))
+  return row
+}
+
+// With DEMO_PASSCODE set on the server, both APIs answer 401 until the
+// passcode is sent. It is kept for this tab only, and only if storage works.
+let passcode = ''
+try { passcode = sessionStorage.getItem('demoPasscode') || '' } catch {}
+let locked = false
+
+class Locked extends Error {}
+
+async function getJson(url) {
+  const res = await fetch(url, { headers: passcode ? { 'X-Demo-Passcode': passcode } : {} })
+  if (res.status === 401) throw new Locked()
+  return res.json()
+}
+
+function lock() {
+  locked = true
+  lastSeen = ''
+  document.getElementById('tickets').replaceChildren(el('p', 'empty', 'Enter the passcode to see tickets.'))
+  document.getElementById('rejections').replaceChildren()
+  document.getElementById('updated').textContent = 'Passcode needed'
+  document.getElementById('unlock-msg').textContent = passcode ? 'Wrong passcode.' : ''
+  document.getElementById('unlock').hidden = false
+  document.getElementById('passcode').focus()
+}
+
+document.getElementById('unlock').addEventListener('submit', (event) => {
+  event.preventDefault()
+  passcode = document.getElementById('passcode').value
+  try { sessionStorage.setItem('demoPasscode', passcode) } catch {}
+  locked = false
+  document.getElementById('unlock').hidden = true
+  refresh()
+})
+
+async function refresh() {
+  if (locked) return // wait for the passcode form
+  try {
+    const [tickets, rejections] = await Promise.all([
+      getJson('/api/tickets'),
+      getJson('/api/rejections'),
+    ])
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString()
+    const seen = JSON.stringify([tickets, rejections])
+    if (seen === lastSeen) return // nothing changed; keep the page still
+    lastSeen = seen
+
+    const filed = tickets.filter((t) => t.status === 'confirmed').length
+    document.getElementById('count-filed').textContent = `${filed} confirmed`
+    document.getElementById('count-draft').textContent = `${tickets.length - filed} drafts`
+
+    const list = document.getElementById('tickets')
+    list.replaceChildren(...(tickets.length
+      ? tickets.slice().reverse().map(ticketCard) // newest first
+      : [el('p', 'empty', 'No tickets yet.')]))
+
+    const panel = document.getElementById('rejections')
+    panel.replaceChildren(...(rejections.length
+      ? rejections.slice().reverse().map(rejectionRow)
+      : [el('p', 'empty', 'None yet.')]))
+  } catch (err) {
+    if (err instanceof Locked) return lock()
+    document.getElementById('updated').textContent = 'Could not reach the server, retrying…'
+  }
+}
+
+refresh()
+setInterval(refresh, 3000)
+</script>
+</body>
+</html>

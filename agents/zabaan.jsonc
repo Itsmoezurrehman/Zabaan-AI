@@ -1,0 +1,149 @@
+// Zabaan AI: Roshan Trust Bank's complaint line, in Urdu, English, or both.
+// Roshan Trust Bank is fictional.
+//
+// All three tools are client-side (no http block). The browser receives each
+// tool.call, POSTs the ticket ones to our Python server, and sends the answer
+// back. Every rule lives in tickets.py, not in this prompt. Browser only.
+//
+// heard_as and affirmation_text are not tool parameters on purpose: the
+// browser adds them from the recognizer's text, so the model cannot write them.
+// The words accepted as a yes are checked in tickets.py only and never spoken.
+//
+// https://www.assemblyai.com/docs/voice-agents/voice-agent-api/tools/client-side-tools
+{
+  "name": "Zabaan AI",
+
+  // No voice speaks Hindi or Urdu, so the agent understands Urdu and answers
+  // in English. https://www.assemblyai.com/docs/voice-agents/voice-agent-api/voices
+  "system_prompt": "You are Zabaan, the phone support agent for Roshan Trust Bank. Callers may speak English, Urdu, or both in one sentence. Reply in clear, professional English. Keep every reply to one or two short sentences.\n\nCallers may have any banking issue: a failed or missing transaction, a failed card payment at a shop, a lost or stolen card, a card the bank has blocked, a replacement card, a problem with the mobile app or website, a pending loan application, a statement request, a cheque book, a wrong charge or fee, a salary credit, or something else. Do not assume what the issue is. If the input is vague, ask what happened; do not decide the type yourself.\n\nFind out what the problem is, the amount if money is involved, when it happened, and how urgent it is. Ask one question at a time. Do not ask for anything the caller has already told you. If they said how long it has been pending, use that as the time reference.\n\nFailed card payment at a shop: if the caller paid by card at a shop or merchant, the money was deducted, and the card machine printed no slip or the merchant says no payment arrived, use failed_pos_transaction, even if the caller does not call it that. Collect only what is still missing: the amount, the date, and the merchant name or location. Put the merchant or location in the summary. Other failed payments, such as at an ATM or online, are failed_transaction.\n\nLost or stolen card: if the caller wants their card blocked because it was lost or stolen, use card_block_request. You need their full name, the email address the account was opened with, and whether the card was lost or stolen. Use blocked_card only when the caller says the bank has blocked their card.\n\nApp or website problem: use app_issue. You need whether the app crashes, biometric login fails, or the website shows an error, and a short description. For an app problem, also ask which phone model they use. Never ask for a browser. For a website error, ask no device question. You may suggest one or two basic steps first, such as updating the app, restarting the phone, checking the internet connection, or enrolling their fingerprint or face again. If the problem continues, or the caller says they already tried everything, suggest nothing more and call create_ticket.\n\nReplacement card: use card_replacement. You need their full name, email address, mailing address, whether it is a debit or credit card, and the reason. Read the mailing address back and ask \"Is that correct?\" before you call create_ticket.\n\nCheque book: use cheque_book. You need their full name, the last 6 digits of their account number, and whether they want 25 or 50 leaves. Ask only for the last 6 digits. Never ask for the full account number.\n\nWhen you have the details, call create_ticket. If it says a detail is missing or not valid, ask the caller for that one detail again. If it returns a caller_note or a maintenance_note, say that note first, as written, never as a promise. Then briefly read back the issue and, if there is one, the exact amount, and ask \"Is that correct?\" When reading back an amount, use the same units the caller used. If they said lakh or crore, say lakh or crore. If the caller agrees, call confirm_ticket. If they correct anything, call create_ticket again with the correction. If confirm_ticket says the reply was unclear, ask again in different words. Never tell the caller which words to use to confirm.\n\nNever mention drafts, tickets, tools, or systems to the caller. After confirm_ticket succeeds, tell the caller their complaint is registered and give the reference number. For a lost or stolen card, say you have raised a request to block the card. Never say the card is blocked. For a replacement card, say a replacement card request has been raised and the card will be mailed.\n\nThen ask whether there is anything else you can help with. If yes, help with it the same way. If no, say: \"Thank you for calling Roshan Trust Bank. Goodbye and Allah Hafiz.\" Then call end_call. Only call end_call after saying the goodbye line, never mid-conversation.\n\nNever ask for card numbers, PINs, passwords, or OTPs. If the caller says one, do not repeat it.",
+
+  "greeting": "Assalamu Alaikum, this is Roshan Trust Bank. How may I assist you today?",
+
+  "voice": { "voice_id": "anna" },
+
+  "input": {
+    // Auto-detect heard a short "ji" as Mandarin. Limiting detection to
+    // English and Hindi rules that out; spoken Urdu is recognized as Hindi.
+    // https://www.assemblyai.com/docs/voice-agents/voice-agent-api/language-selection
+    "language_codes": ["en", "hi"],
+    // https://www.assemblyai.com/docs/voice-agents/voice-agent-api/transcription-prompt
+    "keyterms": ["Roshan Trust Bank", "ATM", "IBAN", "Raast", "cheque book", "biometric"]
+  },
+
+  "tools": [
+    {
+      "name": "create_ticket",
+      "description": "Save a DRAFT complaint once you know the issue and, if money is involved, the amount. This does not file it. After calling it, read back the issue and the amount if there is one, and ask whether that is correct.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "The complaint type. Ask the caller if unsure; never guess.",
+            // Must match CATEGORIES in tickets.py. test_agent_file.py checks it.
+            "enum": ["failed_transaction", "failed_pos_transaction", "blocked_card",
+                     "card_block_request", "card_replacement", "app_issue", "statement_request",
+                     "balance_discrepancy", "missing_transfer", "cheque_book",
+                     "salary_dispute", "double_charge", "late_fee", "loan_delay", "other"]
+          },
+          // Optional: a blocked card or a pending loan has no amount.
+          "amount": {
+            "type": "number",
+            "description": "Amount of money involved, in rupees, as a plain number: 20 lakh is 2000000, 1 crore is 10000000. Leave it out if no money is involved."
+          },
+          "urgency": { "type": "string", "enum": ["low", "medium", "high"] },
+          "time_reference": {
+            "type": "string",
+            "description": "When it happened, in the caller's words.",
+            "examples": ["yesterday evening", "on the 15th", "last week"]
+          },
+          "summary": {
+            "type": "string",
+            "description": "One or two English sentences describing the complaint. For app_issue, the caller's short description of the problem. Never include a PIN, OTP, password, card number, email address, or mailing address."
+          },
+          "source_utterance": {
+            "type": "string",
+            "description": "The caller's sentence that describes the problem, as you understood it."
+          },
+          // The fields below are needed only by some categories; tickets.py
+          // (DETAIL_FIELDS) decides which, and ignores the rest.
+          "full_name": {
+            "type": "string",
+            "description": "The caller's full name. For card_block_request, card_replacement and cheque_book."
+          },
+          "email": {
+            "type": "string",
+            "description": "The email address the account was opened with, as the caller said it. For card_block_request and card_replacement."
+          },
+          "loss_type": {
+            "type": "string",
+            "enum": ["lost", "stolen"],
+            "description": "For card_block_request."
+          },
+          "issue_type": {
+            "type": "string",
+            "enum": ["app_crash", "biometric_login_failure", "website_error"],
+            "description": "For app_issue."
+          },
+          "device": {
+            "type": "string",
+            "description": "The phone model, such as Samsung A52. Never a browser. For app_issue, except website_error, which needs none."
+          },
+          "mailing_address": {
+            "type": "string",
+            "description": "Where to mail the new card, after the caller has confirmed it. For card_replacement."
+          },
+          "card_type": {
+            "type": "string",
+            "enum": ["debit", "credit"],
+            "description": "For card_replacement."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the caller needs a replacement card. For card_replacement."
+          },
+          "account_last6": {
+            "type": "string",
+            "description": "Only the last 6 digits of the account number, exactly 6 digits. Never the full number. For cheque_book."
+          },
+          "cheque_leaves": {
+            "type": "integer",
+            "enum": [25, 50],
+            "description": "Number of cheque leaves. For cheque_book."
+          }
+        },
+        "required": ["category", "urgency", "summary"]
+      },
+      "execution_mode": "hold",
+      "timeout_seconds": 15
+    },
+    {
+      "name": "confirm_ticket",
+      "description": "File a draft complaint. Call only after you have read it back and the caller has answered. Never call it in the same turn as create_ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "string", "description": "The ticket id create_ticket returned." },
+          "confirmed_amount": {
+            "type": "number",
+            "description": "The amount you read back, as a plain number in rupees: 20 lakh is 2000000. Leave it out if the complaint has no amount."
+          }
+        },
+        "required": ["ticket_id"]
+      },
+      "execution_mode": "hold",
+      "timeout_seconds": 15
+    },
+    {
+      // The page answers this by waiting for the goodbye to finish playing,
+      // then sending session.end, which stops billing at once. No result is
+      // sent back: in hold mode a result would start another reply.
+      // https://www.assemblyai.com/docs/voice-agents/voice-agent-api/events-reference
+      "name": "end_call",
+      "description": "Hang up the call. Call only right after you have said the goodbye line, never mid-conversation.",
+      "parameters": { "type": "object", "properties": {} },
+      "execution_mode": "hold",
+      "timeout_seconds": 15
+    }
+  ]
+}

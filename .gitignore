@@ -1,0 +1,19 @@
+# Secrets
+.env
+agents/*.env
+
+# Local ticket data
+tickets.json
+tickets.tmp
+rejections.json
+rejections.tmp
+
+# Local notes and tool settings, kept off the repo
+CLAUDE.md
+.claude/
+
+# Python
+__pycache__/
+.venv/
+
+node_modules/

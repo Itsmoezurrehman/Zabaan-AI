@@ -1,0 +1,20 @@
+# Render Blueprint for Zabaan AI. https://render.com/docs/blueprint-spec
+#
+# Render sets PORT, so the server listens on every interface there
+# (bind_host in server.py). Standard library only: nothing to build.
+services:
+  - type: web
+    name: zabaan-ai
+    runtime: python
+    plan: free
+    buildCommand: 'true'
+    startCommand: python deployment/browser/server.py
+    envVars:
+      # sync: false makes Render ask for the value in its dashboard when the
+      # Blueprint is created. Neither value ever lives in this repo.
+      - key: ASSEMBLYAI_API_KEY
+        sync: false
+      # Starting a voice call and seeing the dashboard at /tickets need this
+      # passcode. The text demo at /mock stays open to everyone.
+      - key: DEMO_PASSCODE
+        sync: false
